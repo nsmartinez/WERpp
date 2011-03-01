@@ -101,7 +101,8 @@ def calculate_statistics(rec_file,ref_file,vocab,options):
       stdout.write("[II] ")
     for i in changes:
       [edition, rec_p, ref_p] = i
-      rec = w_i[rec_p]; ref = w_j[ref_p]
+      rec = "" if edition == 'I' else w_i[rec_p] #avoid rec_p -1
+      ref = w_j[ref_p]
 
       #color the operations
       if options.v == True:

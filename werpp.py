@@ -1,6 +1,23 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+# werpp.py: Calculates WER and paints the edition operations
+# Copyright (C) 2011 Nicolás Serrano Martínez-Santos <nserrano@iti.upv.es>
+# Contributors: Guillem Gasco
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
 import codecs
 import re
 from random import shuffle
@@ -42,7 +59,7 @@ class color:
 
 
 
-def lev_changes(str1, str2, i_cost, d_cost, d_sub):
+def lev_changes(str1, str2, i_cost, d_cost, d_sub,vocab):
   d={}; sub={};
   for i in range(len(str1)+1):
     d[i]=dict()
@@ -55,20 +72,26 @@ def lev_changes(str1, str2, i_cost, d_cost, d_sub):
   for i in range(1, len(str1)+1):
     for j in range(1, len(str2)+1):
       if d[i][j-1]+i_cost < d[i-1][j]+d_cost and d[i][j-1] < d[i-1][j-1]+(not str1[i-1] == str2[j-1])*d_sub:
-        sub[i][j] = "I";
+        if (str2[j-1] in vocab) or vocab=={}:
+          sub[i][j] = "I";
+        else:
+          sub[i][j] = "O"; #Oov insertion
       elif d[i-1][j]+d_cost < d[i][j-1]+i_cost and d[i-1][j] < d[i-1][j-1]+(not str1[i-1] == str2[j-1])*d_sub:
         sub[i][j] = "D";
       else:
         if str1[i-1] == str2[j-1]:
           sub[i][j] = "E";
         else:
-          sub[i][j] = "S";
+          if (str2[j-1] in vocab) or vocab=={}:
+            sub[i][j] = "S";
+          else:
+            sub[i][j] = "A"; #Oov Substitution
       d[i][j] = min(d[i][j-1]+i_cost, d[i-1][j]+d_cost, d[i-1][j-1]+(not str1[i-1] == str2[j-1])*d_sub)
 
   i=len(str1); j=len(str2); path=[]
   while(i > 0 or j > 0):
     path.append([sub[i][j],i-1,j-1])
-    if(sub[i][j] == "I"):
+    if(sub[i][j] == "I" or sub[i][j] == "O"):
       j-=1
     elif(sub[i][j] == "D"):
       i-=1
@@ -84,6 +107,8 @@ def calculate_statistics(rec_file,ref_file,vocab,options):
   join_symbol="#"
   colors=color(options.color)
   error_segment = [0]*(options.segments)
+  oovSubs=0
+  oovIns=0
   oovs = 0
   ref_count=0
 
@@ -95,7 +120,7 @@ def calculate_statistics(rec_file,ref_file,vocab,options):
 
     ref_count+= len(w_j)
 
-    changes = lev_changes(w_i,w_j,1,1,1)
+    changes = lev_changes(w_i,w_j,1,1,1,vocab)
 
     if options.v == True:
       stdout.write("[II] ")
@@ -108,10 +133,14 @@ def calculate_statistics(rec_file,ref_file,vocab,options):
       if options.v == True:
         if edition == 'S':
           stdout.write("%s " %(colors.c_string("B",rec+join_symbol+ref).encode("utf-8")))
+        elif edition == 'A':
+          stdout.write("%s " %(colors.c_string("Y",rec+join_symbol+ref).encode("utf-8")))
         elif edition == 'I':
           stdout.write("%s " %(colors.c_string("G",ref).encode("utf-8")))
         elif edition == 'D':
           stdout.write("%s " %(colors.c_string("R",rec).encode("utf-8")))
+        elif edition == 'O':
+          stdout.write("%s " %(colors.c_string("Y",ref).encode("utf-8")))
         else:
           stdout.write("%s " %ref.encode("utf-8"))
 
@@ -124,8 +153,10 @@ def calculate_statistics(rec_file,ref_file,vocab,options):
             oovs+=1
 
       #count events in dictionaries
-      if edition == 'S':
+      if edition == 'S' or edition == 'A':
         subs_all+=1
+        if edition == 'A':
+          oovSubs+=1
         if ref not in subs:
           subs[ref]={}
         if rec not in subs[ref]:
@@ -134,7 +165,9 @@ def calculate_statistics(rec_file,ref_file,vocab,options):
           subs[ref][rec]+=1
         subs_counts[ref]+=1
 
-      elif edition == 'I':
+      elif edition == 'I' or edition == 'O':
+        if edition == 'O':
+          oovIns+=1
         ins_all+=1
         ins[ref]+=1
       elif edition == 'D':
@@ -144,11 +177,13 @@ def calculate_statistics(rec_file,ref_file,vocab,options):
     if options.v == True:
       stdout.write("\n")
 
-  print oovs
-  stdout.write("WER: %.2f%% (Ins: %d Dels: %d Subs: %d Ref: %d)" \
+  stdout.write("WER: %.2f (Ins: %d Dels: %d Subs: %d Ref: %d)" \
       %(float(subs_all+ins_all+dels_all)/ref_count*100,ins_all,dels_all,subs_all,ref_count))
   if options.vocab != None:
-    stdout.write(" OOVs: %.2f%%" %(float(oovs)/ref_count*100))
+   # stdout.write(" OOVs: %.2f%%" %(float(oovs)/ref_count*100))
+    stdout.write(" OOVs: %.2f%%" %(float(oovSubs+oovIns)/ref_count*100))
+    stdout.write(" OOVsSubs: %.2f%%" %(float(oovSubs)/subs_all*100))
+    stdout.write(" OOVsIns: %.2f%%" %(float(oovIns)/ins_all*100))
   stdout.write("\n")
 
   if options.segments > 1:
@@ -200,13 +235,13 @@ def main():
   cmd_parser.parse_args(argv)
   (opts, args)= cmd_parser.parse_args()
 
-  vocab = []
+  vocab = {}
   if opts.vocab != None:
-    f = codecs.open(args[0],"r","utf-8")
+    f = codecs.open(opts.vocab,"r","utf-8")
     for i in f.readlines():
       for j in i.split():
         if j not in vocab:
-          vocab.append(j)
+          vocab[j]=1
 
   if len(args) != 2:
     cmd_parser.print_help()

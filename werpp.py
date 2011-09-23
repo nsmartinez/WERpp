@@ -109,7 +109,12 @@ def calculate_statistics(rec_file,ref_file,vocab,options):
   subs={}; subs_counts=D(); subs_all = 0
   ins=D(); ins_all = 0
   dels=D(); dels_all = 0
+
+  #count dummy errors
+  subs_all_eq = 0; dels_all_eq = 0
+
   join_symbol="@"
+  dummy_symbol="#"
   colors=color(options.color)
   error_segment = [0]*(options.segments)
   oovSubs=0
@@ -166,6 +171,8 @@ def calculate_statistics(rec_file,ref_file,vocab,options):
 
       #count events in dictionaries
       if edition == 'S' or edition == 'A':
+        if options.equal_func == "dummy" and dummy_symbol not in rec:
+          subs_all_eq+=1
         subs_all+=1
         if edition == 'A':
           oovSubs+=1
@@ -183,6 +190,8 @@ def calculate_statistics(rec_file,ref_file,vocab,options):
         ins_all+=1
         ins[ref]+=1
       elif edition == 'D':
+        if options.equal_func == "dummy" and dummy_symbol not in rec:
+          dels_all_eq+=1
         dels_all+=1
         dels[rec]+=1
 
@@ -191,12 +200,20 @@ def calculate_statistics(rec_file,ref_file,vocab,options):
 
   stdout.write("WER: %.2f (Ins: %d Dels: %d Subs: %d Ref: %d)" \
       %(float(subs_all+ins_all+dels_all)/ref_count*100,ins_all,dels_all,subs_all,ref_count))
+
   if options.vocab != None:
    # stdout.write(" OOVs: %.2f%%" %(float(oovs)/ref_count*100))
     stdout.write(" OOVs: %.2f%%" %(float(oovSubs+oovIns)/ref_count*100))
     stdout.write(" OOVsSubs: %.2f%%" %(float(oovSubs)/subs_all*100))
     stdout.write(" OOVsIns: %.2f%%" %(float(oovIns)/ins_all*100))
   stdout.write("\n")
+
+  if options.equal_func == "dummy":
+    ref_count_dummy = (ref_count - ins_all - (subs_all - subs_all_eq))
+    #ref_count_dummy = ref_count
+    stdout.write("WER-DUMMY: %.2f (Ins: %d Dels: %d Subs: %d Ref: %d)\n" \
+        %(float(subs_all_eq+dels_all_eq)/ref_count_dummy*100,0,dels_all_eq,subs_all_eq,
+          ref_count_dummy))
 
   if options.segments > 1:
     stdout.write("----------------------------------\nErrors in segment\n----------------------------------\n")

@@ -57,9 +57,7 @@ class color:
   def c_string(self,color,string):
     return self.d[color]+string+self.RESET_SEQ
 
-
-
-def lev_changes(str1, str2, i_cost, d_cost, d_sub,vocab):
+def lev_changes(str1, str2, i_cost, d_cost, d_sub,vocab, eq_func):
   d={}; sub={};
   for i in range(len(str1)+1):
     d[i]=dict()
@@ -71,22 +69,22 @@ def lev_changes(str1, str2, i_cost, d_cost, d_sub,vocab):
     sub[0][i]="I"
   for i in range(1, len(str1)+1):
     for j in range(1, len(str2)+1):
-      if d[i][j-1]+i_cost < d[i-1][j]+d_cost and d[i][j-1] < d[i-1][j-1]+(not str1[i-1] == str2[j-1])*d_sub:
+      if d[i][j-1]+i_cost < d[i-1][j]+d_cost and d[i][j-1] < d[i-1][j-1]+(not eq_func(str1[i-1],str2[j-1]))*d_sub:
         if (str2[j-1] in vocab) or vocab=={}:
           sub[i][j] = "I";
         else:
           sub[i][j] = "O"; #Oov insertion
-      elif d[i-1][j]+d_cost < d[i][j-1]+i_cost and d[i-1][j] < d[i-1][j-1]+(not str1[i-1] == str2[j-1])*d_sub:
+      elif d[i-1][j]+d_cost < d[i][j-1]+i_cost and d[i-1][j] < d[i-1][j-1]+(not eq_func(str1[i-1],str2[j-1]))*d_sub:
         sub[i][j] = "D";
       else:
-        if str1[i-1] == str2[j-1]:
+        if eq_func(str1[i-1],str2[j-1]):
           sub[i][j] = "E";
         else:
           if (str2[j-1] in vocab) or vocab=={}:
             sub[i][j] = "S";
           else:
             sub[i][j] = "A"; #Oov Substitution
-      d[i][j] = min(d[i][j-1]+i_cost, d[i-1][j]+d_cost, d[i-1][j-1]+(not str1[i-1] == str2[j-1])*d_sub)
+      d[i][j] = min(d[i][j-1]+i_cost, d[i-1][j]+d_cost, d[i-1][j-1]+(not eq_func(str1[i-1],str2[j-1]))*d_sub)
 
   i=len(str1); j=len(str2); path=[]
   while(i > 0 or j > 0):
@@ -100,17 +98,32 @@ def lev_changes(str1, str2, i_cost, d_cost, d_sub,vocab):
   path.reverse()
   return path;
 
+# Normal compare strings
+def string_equal(str1,str2):
+  return (str1 == str2)
+
+def dummy_string_equal(str1,str2):
+  return (str1.replace("#","") == str2)
+
 def calculate_statistics(rec_file,ref_file,vocab,options):
   subs={}; subs_counts=D(); subs_all = 0
   ins=D(); ins_all = 0
   dels=D(); dels_all = 0
-  join_symbol="#"
+  join_symbol="@"
   colors=color(options.color)
   error_segment = [0]*(options.segments)
   oovSubs=0
   oovIns=0
   oovs = 0
   ref_count=0
+
+  eq_func = string_equal
+
+  if options.equal_func == "dummy":
+    eq_func = dummy_string_equal
+
+  if options.v == True:
+    stdout.write(colors.RESET_SEQ)
 
   for i in rec_file.readlines():
     j = ref_file.readline()
@@ -120,7 +133,7 @@ def calculate_statistics(rec_file,ref_file,vocab,options):
 
     ref_count+= len(w_j)
 
-    changes = lev_changes(w_i,w_j,1,1,1,vocab)
+    changes = lev_changes(w_i,w_j,1,1,1,vocab,eq_func)
 
     if options.v == True:
       stdout.write("[II] ")
@@ -143,7 +156,6 @@ def calculate_statistics(rec_file,ref_file,vocab,options):
           stdout.write("%s " %(colors.c_string("Y",ref).encode("utf-8")))
         else:
           stdout.write("%s " %ref.encode("utf-8"))
-
 
       #count the segment where the errors occur
       if edition != 'E':
@@ -226,6 +238,9 @@ def main():
      action="store", type="int", dest="n", default=0, help='Words words to print')
   cmd_parser.add_option('-s', '--error-segments',
      action="store", type="int", dest="segments", default=1, help='Number of error segments')
+  cmd_parser.add_option('-e', '--equal-func',
+     action="store", type="string", dest="equal_func", default="standard", help='String compare function=[ '
+     'standard , dummy ]')
   cmd_parser.add_option('-c', '--colors',
       action="store_true",dest="color",
       help='Color the output')

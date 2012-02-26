@@ -20,6 +20,7 @@
 
 import codecs
 import re
+from file_reader import FileReader
 from random import shuffle
 from sys import argv,stderr,stdout
 from optparse import OptionParser
@@ -57,7 +58,35 @@ class color:
   def c_string(self,color,string):
     return self.d[color]+string+self.RESET_SEQ
 
-def lev_changes(str1, str2, i_cost, d_cost, d_sub,vocab, eq_func):
+# Normal compare strings
+def string_equal(str1,str2):
+  return (str1 == str2)
+
+# Ignore simbol #
+def dummy_string_equal(str1,str2):
+  return (str1.replace("#","") == str2)
+
+def string_ignore_excp(str1,str2,excps_v=None):
+  return (str1 == str2)
+
+#read lines and return its simbol representation
+def char_to_num(x):
+  res =""
+  s=x
+  for i in s:
+    if i == " ":
+      res += "_blank "
+    else:
+      res += "%d " %ord(i)
+  return res[:-1]
+
+def num_to_char(j):
+  if j != "_blank":
+    return unichr(int(j))
+  else:
+    return j
+
+def lev_changes(str1, str2, i_cost, d_cost, d_sub,vocab={}, eq_func=string_equal):
   d={}; sub={};
   for i in range(len(str1)+1):
     d[i]=dict()
@@ -70,7 +99,7 @@ def lev_changes(str1, str2, i_cost, d_cost, d_sub,vocab, eq_func):
   for i in range(1, len(str1)+1):
     for j in range(1, len(str2)+1):
       if d[i][j-1]+i_cost < d[i-1][j]+d_cost and d[i][j-1] < d[i-1][j-1]+(not eq_func(str1[i-1],str2[j-1]))*d_sub:
-        if (str2[j-1] in vocab) or vocab=={}:
+        if vocab=={} or (str2[j-1] in vocab):
           sub[i][j] = "I";
         else:
           sub[i][j] = "O"; #Oov insertion
@@ -80,7 +109,7 @@ def lev_changes(str1, str2, i_cost, d_cost, d_sub,vocab, eq_func):
         if eq_func(str1[i-1],str2[j-1]):
           sub[i][j] = "E";
         else:
-          if (str2[j-1] in vocab) or vocab=={}:
+          if vocab=={} or (str2[j-1] in vocab):
             sub[i][j] = "S";
           else:
             sub[i][j] = "A"; #Oov Substitution
@@ -96,27 +125,15 @@ def lev_changes(str1, str2, i_cost, d_cost, d_sub,vocab, eq_func):
     else:
       j-=1; i-=1;
   path.reverse()
-  return path;
-
-# Normal compare strings
-def string_equal(str1,str2):
-  return (str1 == str2)
-
-def dummy_string_equal(str1,str2):
-  return (str1.replace("#","") == str2)
+  return path
 
 def calculate_statistics(rec_file,ref_file,vocab,options):
   subs={}; subs_counts=D(); subs_all = 0
   ins=D(); ins_all = 0
   dels=D(); dels_all = 0
 
-  #count dummy errors
-  subs_all_eq = 0; dels_all_eq = 0
-
   join_symbol="@"
-  dummy_symbol="#"
   colors=color(options.color)
-  error_segment = [0]*(options.segments)
   oovSubs=0
   oovIns=0
   oovs = 0
@@ -124,14 +141,33 @@ def calculate_statistics(rec_file,ref_file,vocab,options):
 
   eq_func = string_equal
 
+  #change compare function
   if options.equal_func == "dummy":
     eq_func = dummy_string_equal
+
+  excps = []
+  if options.excp_file != None:
+    f = codecs.open(options.excp_file,"r","utf-8")
+    for i in f.readlines():
+      excps.append(i[:-1])
+    f.close()
 
   if options.v == True:
     stdout.write(colors.RESET_SEQ)
 
-  for i in rec_file.readlines():
+  i = rec_file.readline()
+  while len(i) != 0:
     j = ref_file.readline()
+
+    #delete some symbols
+    if options.excp_file != None:
+      for e in excps:
+        i = i.replace(e,"")
+        j = j.replace(e,"")
+
+    if options.cer:
+      i = char_to_num(i[:-1])
+      j = char_to_num(j[:-1])
 
     w_i = i.split()
     w_j = j.split()
@@ -142,10 +178,16 @@ def calculate_statistics(rec_file,ref_file,vocab,options):
 
     if options.v == True:
       stdout.write("[II] ")
+    #verbose variables
+    v_editions=0
+
     for i in changes:
       [edition, rec_p, ref_p] = i
-      rec = "" if edition == 'I' else w_i[rec_p] #avoid rec_p -1
+      rec = w_i[rec_p] if len(w_i) > 0 else "#"
       ref = w_j[ref_p]
+      if options.cer:
+        rec = num_to_char(rec)
+        ref = num_to_char(ref)
 
       #color the operations
       if options.v == True:
@@ -164,15 +206,15 @@ def calculate_statistics(rec_file,ref_file,vocab,options):
 
       #count the segment where the errors occur
       if edition != 'E':
-        error_segment[ref_p*options.segments/len(w_j)]+=1
+        #WER on each line
+        if options.V == 1:
+          v_editions+=1
         if options.vocab != None:
           if ref not in vocab:
             oovs+=1
 
       #count events in dictionaries
       if edition == 'S' or edition == 'A':
-        if options.equal_func == "dummy" and dummy_symbol not in rec:
-          subs_all_eq+=1
         subs_all+=1
         if edition == 'A':
           oovSubs+=1
@@ -190,15 +232,18 @@ def calculate_statistics(rec_file,ref_file,vocab,options):
         ins_all+=1
         ins[ref]+=1
       elif edition == 'D':
-        if options.equal_func == "dummy" and dummy_symbol not in rec:
-          dels_all_eq+=1
         dels_all+=1
         dels[rec]+=1
 
     if options.v == True:
       stdout.write("\n")
 
-  stdout.write("WER: %.2f (Ins: %d Dels: %d Subs: %d Ref: %d)" \
+    if options.V == 1:
+      stdout.write("[II] WER-per-sentence Eds: %d Ref: %d\n" %(v_editions,len(w_j)))
+
+    i = rec_file.readline()
+
+  stdout.write("WER: %.2f (Ins: %d Dels: %d Subs: %d Ref: %d )" \
       %(float(subs_all+ins_all+dels_all)/ref_count*100,ins_all,dels_all,subs_all,ref_count))
 
   if options.vocab != None:
@@ -207,20 +252,6 @@ def calculate_statistics(rec_file,ref_file,vocab,options):
     stdout.write(" OOVsSubs: %.2f%%" %(float(oovSubs)/subs_all*100))
     stdout.write(" OOVsIns: %.2f%%" %(float(oovIns)/ins_all*100))
   stdout.write("\n")
-
-  if options.equal_func == "dummy":
-    ref_count_dummy = (ref_count - ins_all - (subs_all - subs_all_eq))
-    #ref_count_dummy = ref_count
-    stdout.write("WER-DUMMY: %.2f (Ins: %d Dels: %d Subs: %d Ref: %d)\n" \
-        %(float(subs_all_eq+dels_all_eq)/ref_count_dummy*100,0,dels_all_eq,subs_all_eq,
-          ref_count_dummy))
-
-  if options.segments > 1:
-    stdout.write("----------------------------------\nErrors in segment\n----------------------------------\n")
-    total = sum(error_segment)
-    for i in range(options.segments):
-      stdout.write("%.2f " %(float(error_segment[i])/total*100))
-    stdout.write("\n")
 
   if options.n > 0:
     stdout.write("----------------------------------\nWer due to words words\n----------------------------------\n")
@@ -251,13 +282,17 @@ def main():
   cmd_parser.add_option('-v',
       action="store_true",dest="v",
       help='Verbose power on!')
+  cmd_parser.add_option('-V', '--verbose',
+     action="store", type="int", dest="V", default=0, help='Verbose level')
   cmd_parser.add_option('-n', '--worst-events',
      action="store", type="int", dest="n", default=0, help='Words words to print')
-  cmd_parser.add_option('-s', '--error-segments',
-     action="store", type="int", dest="segments", default=1, help='Number of error segments')
   cmd_parser.add_option('-e', '--equal-func',
      action="store", type="string", dest="equal_func", default="standard", help='String compare function=[ '
      'standard , dummy ]')
+  cmd_parser.add_option('--cer',
+     action="store_true", dest="cer", help='Calculate Character Error Rate')
+  cmd_parser.add_option('-f', '--excp-file',
+     action="store", type="string", dest="excp_file",  help='File containing the characters to delete')
   cmd_parser.add_option('-c', '--colors',
       action="store_true",dest="color",
       help='Color the output')
@@ -281,6 +316,8 @@ def main():
 
   rec_file = codecs.open(args[0],"r","utf-8")
   ref_file = codecs.open(args[1],"r","utf-8")
+  rec_file_reader = FileReader(rec_file)
+  ref_file_reader = FileReader(ref_file)
 
   calculate_statistics(rec_file,ref_file,vocab,opts)
 

@@ -75,13 +75,13 @@ def char_to_num(x):
   s=x
   for i in s:
     if i == " ":
-      res += "_blank "
+      res += "__ "
     else:
       res += "%d " %ord(i)
   return res[:-1]
 
 def num_to_char(j):
-  if j != "_blank":
+  if j != "__":
     return unichr(int(j))
   else:
     return j
@@ -191,18 +191,25 @@ def calculate_statistics(rec_file,ref_file,vocab,options):
 
       #color the operations
       if options.v == True:
+        str_out = ""
         if edition == 'S':
-          stdout.write("%s " %(colors.c_string("B",rec+join_symbol+ref).encode("utf-8")))
+          str_out = "%s" %(colors.c_string("B",rec+join_symbol+ref).encode("utf-8"))
         elif edition == 'A':
-          stdout.write("%s " %(colors.c_string("Y",rec+join_symbol+ref).encode("utf-8")))
+          str_out = "%s" %(colors.c_string("Y",rec+join_symbol+ref).encode("utf-8"))
         elif edition == 'I':
-          stdout.write("%s " %(colors.c_string("G",ref).encode("utf-8")))
+          str_out = "%s" %(colors.c_string("G",ref).encode("utf-8"))
         elif edition == 'D':
-          stdout.write("%s " %(colors.c_string("R",rec).encode("utf-8")))
+          str_out = "%s" %(colors.c_string("R",rec).encode("utf-8"))
         elif edition == 'O':
-          stdout.write("%s " %(colors.c_string("Y",ref).encode("utf-8")))
+          str_out = "%s" %(colors.c_string("Y",ref).encode("utf-8"))
         else:
-          stdout.write("%s " %ref.encode("utf-8"))
+          str_out = "%s" %ref.encode("utf-8")
+        if not options.cer:
+          str_out = str_out+" "
+        elif "__" in str_out:
+          str_out = " "+str_out+" "
+        stdout.write(str_out)
+
 
       #count the segment where the errors occur
       if edition != 'E':
@@ -218,12 +225,13 @@ def calculate_statistics(rec_file,ref_file,vocab,options):
         subs_all+=1
         if edition == 'A':
           oovSubs+=1
-        if ref not in subs:
-          subs[ref]={}
-        if rec not in subs[ref]:
-          subs[ref][rec] = 1
-        else:
-          subs[ref][rec]+=1
+        if options.n > 0:
+          if ref not in subs:
+            subs[ref]={}
+          if rec not in subs[ref]:
+            subs[ref][rec] = 1
+          else:
+            subs[ref][rec]+=1
         subs_counts[ref]+=1
 
       elif edition == 'I' or edition == 'O':

@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 # werpp.py: Calculates WER and paints the edition operations
-# Copyright (C) 2011 Nicolás Serrano Martínez-Santos <nserrano@iti.upv.es>
+# Copyright (C) 2011 Nicolás Serrano Martínez-Santos <nserrano@dsic.upv.es>
 # Contributors: Guillem Gasco
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -20,10 +20,46 @@
 
 import codecs
 import re
-from file_reader import FileReader
 from random import shuffle
 from sys import argv,stderr,stdout
 from optparse import OptionParser
+import codecs
+
+class FileReader:
+  def __init__(self,f,buffer_size=1024):
+    #open file
+    self.f = f
+    self.buffer_size = 1024
+    self.buff_readed = 0
+    self.buff_len = 0
+
+  def read_buff(self):
+    self.buff = self.f.read(self.buffer_size)
+
+    self.buff_len = len(self.buff)
+    self.buff_readed = 0
+
+    if self.buff_len == 0:
+      return False
+    else:
+      return True
+
+  def readline(self):
+    s = ""
+    while 1:
+      while self.buff_readed < self.buff_len:
+        if self.buff[self.buff_readed] == '\n':
+          self.buff_readed+=1
+          return s
+        else:
+          s+=self.buff[self.buff_readed]
+          self.buff_readed+=1
+
+      if not self.read_buff():
+        return None
+
+  def close(self):
+    self.f.close()
 
 #awk style dictionary
 class D(dict):
@@ -66,8 +102,8 @@ def string_equal(str1,str2):
 def dummy_string_equal(str1,str2):
   return (str1.replace("#","") == str2)
 
-def string_ignore_excp(str1,str2,excps_v=None):
-  return (str1 == str2)
+def string_equal_lowercase(str1,str2):
+  return (str1.lower() == str2.lower())
 
 #read lines and return its simbol representation
 def char_to_num(x):
@@ -144,6 +180,8 @@ def calculate_statistics(rec_file,ref_file,vocab,options):
   #change compare function
   if options.equal_func == "dummy":
     eq_func = dummy_string_equal
+  elif options.equal_func == "lower":
+    eq_func = string_equal_lowercase
 
   excps = []
   if options.excp_file != None:
@@ -296,7 +334,7 @@ def main():
      action="store", type="int", dest="n", default=0, help='Words words to print')
   cmd_parser.add_option('-e', '--equal-func',
      action="store", type="string", dest="equal_func", default="standard", help='String compare function=[ '
-     'standard , dummy ]')
+     'standard , dummy, lower ]')
   cmd_parser.add_option('--cer',
      action="store_true", dest="cer", help='Calculate Character Error Rate')
   cmd_parser.add_option('-f', '--excp-file',

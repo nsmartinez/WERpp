@@ -3,7 +3,7 @@
 
 # werpp.py: Calculates WER and paints the edition operations
 # Copyright (C) 2011 Nicolás Serrano Martínez-Santos <nserrano@dsic.upv.es>
-# Contributors: Guillem Gasco
+# Contributors: Guillem Gasco, Adria A. Martinez
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
@@ -21,9 +21,11 @@
 import codecs
 import re
 from random import shuffle
-from sys import argv,stderr,stdout
+from sys import argv,stderr,stdout,maxsize
 from optparse import OptionParser
 import codecs
+import array
+from copy import copy
 
 class FileReader:
   def __init__(self,f,buffer_size=1024):
@@ -66,6 +68,21 @@ class D(dict):
   def __getitem__(self, i):
     if i not in self: self[i] = 0
     return dict.__getitem__(self, i)
+
+#awk style dictionary
+class Dincr():
+  def __init__(this):
+    this.n = 0
+    this.anti_d = {}
+    this.d = {}
+  def dic(self, i):
+    if i not in self.d:
+      self.d[i] = self.n
+      self.anti_d[self.n] = i
+      self.n += 1
+    return self.d[i]
+  def inv(self, i):
+    return self.anti_d[i]
 
 class color:
   d={}; RESET_SEQ=""
@@ -122,41 +139,95 @@ def num_to_char(j):
   else:
     return j
 
+class e_op:
+  def __init__(this,ins,dels,subs):
+    this.i = ins; this.d = dels; this.s = subs
+  def cost(this):
+    return this.i + this.d + this.s
+  def ins(this):
+    return this.i
+  def dels(this):
+    return this.d
+  def subs(this):
+    return this.s
+  def __repr__(this):
+    return "I:%d D:%d S:%d" %(this.i,this.d,this.s)
+
+#only computes the cost of the best path    
+def lev_changes_naive(str1, str2, eq_func=string_equal):
+
+  d_prev=[]
+  d_curr=[]
+
+  for i in xrange(len(str1)+1):
+    d_prev.append(e_op(0,i,0))
+    d_curr.append(e_op(0,0,0))
+
+  for i in xrange(1, len(str2)+1):
+    for j in xrange(1, len(str1)+1):
+      if j == 1:
+        d_curr[0].i = i
+
+      equals = (1- eq_func(str1[j-1],str2[i-1]))
+      sub_cost = d_prev[j-1].cost() + equals
+      ins_cost = d_prev[j].cost() + 1
+      del_cost = d_curr[j-1].cost() + 1
+
+      if sub_cost < ins_cost and sub_cost < del_cost:
+        d_curr[j].i = d_prev[j-1].i
+        d_curr[j].d = d_prev[j-1].d
+        d_curr[j].s = d_prev[j-1].s + equals
+      elif ins_cost < del_cost:
+        d_curr[j].i = d_prev[j].i + 1
+        d_curr[j].d = d_prev[j].d
+        d_curr[j].s = d_prev[j].s
+      else:
+        d_curr[j].i = d_curr[j-1].i
+        d_curr[j].d = d_curr[j-1].d + 1
+        d_curr[j].s = d_curr[j-1].s
+
+    aux = d_prev
+    d_prev = d_curr
+    d_curr = aux
+
+  return d_prev[len(str1)].ins(), d_prev[len(str1)].dels(), d_prev[len(str1)].subs()
+
+
 def lev_changes(str1, str2, i_cost, d_cost, d_sub,vocab={}, eq_func=string_equal):
   d={}; sub={};
   for i in range(len(str1)+1):
     d[i]=dict()
-    d[i][0]=i
+    d[i][0]=i*d_cost
     sub[i]={}
-    sub[i][0]="D"
+    sub[i][0]='D'
   for i in range(len(str2)+1):
-    d[0][i] = i
-    sub[0][i]="I"
+    d[0][i] = i*i_cost
+    sub[0][i]='I'
   for i in range(1, len(str1)+1):
     for j in range(1, len(str2)+1):
       if d[i][j-1]+i_cost < d[i-1][j]+d_cost and d[i][j-1] < d[i-1][j-1]+(not eq_func(str1[i-1],str2[j-1]))*d_sub:
         if vocab=={} or (str2[j-1] in vocab):
-          sub[i][j] = "I";
+          sub[i][j] = 'I';
         else:
-          sub[i][j] = "O"; #Oov insertion
+          sub[i][j] = 'O'; #Oov insertion
       elif d[i-1][j]+d_cost < d[i][j-1]+i_cost and d[i-1][j] < d[i-1][j-1]+(not eq_func(str1[i-1],str2[j-1]))*d_sub:
-        sub[i][j] = "D";
+        sub[i][j] = 'D';
       else:
         if eq_func(str1[i-1],str2[j-1]):
-          sub[i][j] = "E";
+          sub[i][j] = 'E';
         else:
           if vocab=={} or (str2[j-1] in vocab):
-            sub[i][j] = "S";
+            sub[i][j] = 'S';
           else:
-            sub[i][j] = "A"; #Oov Substitution
+            sub[i][j] = 'A'; #Oov Substitution
       d[i][j] = min(d[i][j-1]+i_cost, d[i-1][j]+d_cost, d[i-1][j-1]+(not eq_func(str1[i-1],str2[j-1]))*d_sub)
 
   i=len(str1); j=len(str2); path=[]
   while(i > 0 or j > 0):
     path.append([sub[i][j],i-1,j-1])
-    if(sub[i][j] == "I" or sub[i][j] == "O"):
+    if(sub[i][j] == 'I' or sub[i][j] == 'O'):
       j-=1
-    elif(sub[i][j] == "D"):
+    elif(sub[i][j] == 'D'):
       i-=1
     else:
       j-=1; i-=1;
@@ -167,6 +238,7 @@ def calculate_statistics(rec_file,ref_file,vocab,options):
   subs={}; subs_counts=D(); subs_all = 0
   ins=D(); ins_all = 0
   dels=D(); dels_all = 0
+  words=Dincr(); n_words = 0
 
   join_symbol="@"
   colors=color(options.color)
@@ -174,6 +246,8 @@ def calculate_statistics(rec_file,ref_file,vocab,options):
   oovIns=0
   oovs = 0
   ref_count=0
+
+  n_pressed_keys = 0
 
   eq_func = string_equal
 
@@ -204,88 +278,143 @@ def calculate_statistics(rec_file,ref_file,vocab,options):
         j = j.replace(e,"")
 
     if options.cer:
-      i = char_to_num(i[:-1])
-      j = char_to_num(j[:-1])
+      if options.equal_func == "lower":
+        i = char_to_num(i[:-1].lower())
+        j = char_to_num(j[:-1].lower())
+      else:
+        i = char_to_num(i[:-1])
+        j = char_to_num(j[:-1])
 
-    w_i = i.split()
-    w_j = j.split()
+    words_i = i.split()
+    words_j = j.split()
+
+    w_i = []
+    w_j = []
+    for i in words_i:
+      w_i.append(words.dic(i))
+    for i in words_j:
+      w_j.append(words.dic(i))
+
+    if len(w_j) == 0:
+      if options.ignore_blank == True:
+        stderr.write("[WW] Blank line in reference, ignoring it\n")
+        i = rec_file.readline()
+        continue
+      else:
+        stderr.write("[WW] Blank line in reference\n")
+        if options.v == True:
+          stdout.write("[II] ")
+
+        changes = lev_changes(w_i, w_j, 1, 1, 1, vocab, eq_func)
+        for ikk in changes:
+          [edition, rec_p, ref_p] = ikk
+          rec = w_i[rec_p] if len(w_i) > 0 else "#"
+          if options.cer:
+            rec = num_to_char(rec)
+          if options.v == True:
+            str_out = "%s" %(colors.c_string("R",rec).encode("utf-8"))
+            if not options.cer:
+              str_out = str_out+" "
+            elif "__" in str_out:
+              str_out = " "+str_out+" "
+            stdout.write(str_out)
+          dels_all+=1
+          dels[rec]+=1
+        if options.v == True:
+          stdout.write("\n")
+      i = rec_file.readline()
+      continue
+
 
     ref_count+= len(w_j)
 
-    changes = lev_changes(w_i,w_j,1,1,1,vocab,eq_func)
+    if options.v == None and options.V == 0 and options.n == 0 and options.color == None and \
+          options.vocab == None and options.key_pressed == None:
+      ins_naive, del_naive, subs_naive = lev_changes_naive(w_i,w_j)
+      ins_all += ins_naive; dels_all += del_naive; subs_all += subs_naive
+    else:
+      changes = lev_changes(w_i,w_j,1,1,1,vocab,eq_func)
 
-    if options.v == True:
-      stdout.write("[II] ")
-    #verbose variables
-    v_editions=0
-
-    for i in changes:
-      [edition, rec_p, ref_p] = i
-      rec = w_i[rec_p] if len(w_i) > 0 else "#"
-      ref = w_j[ref_p]
-      if options.cer:
-        rec = num_to_char(rec)
-        ref = num_to_char(ref)
-
-      #color the operations
       if options.v == True:
-        str_out = ""
-        if edition == 'S':
-          str_out = "%s" %(colors.c_string("B",rec+join_symbol+ref).encode("utf-8"))
-        elif edition == 'A':
-          str_out = "%s" %(colors.c_string("Y",rec+join_symbol+ref).encode("utf-8"))
-        elif edition == 'I':
-          str_out = "%s" %(colors.c_string("G",ref).encode("utf-8"))
-        elif edition == 'D':
-          str_out = "%s" %(colors.c_string("R",rec).encode("utf-8"))
-        elif edition == 'O':
-          str_out = "%s" %(colors.c_string("Y",ref).encode("utf-8"))
-        else:
-          str_out = "%s" %ref.encode("utf-8")
-        if not options.cer:
-          str_out = str_out+" "
-        elif "__" in str_out:
-          str_out = " "+str_out+" "
-        stdout.write(str_out)
+        stdout.write("[II] ")
+      #verbose variables
+      v_editions=0
 
+      for i in changes:
+        [edition, rec_p, ref_p] = i
+        rec = words.inv(w_i[rec_p]) if len(w_i) > 0 else "#"
+        ref = words.inv(w_j[ref_p])
+        if options.cer:
+          rec = num_to_char(rec)
+          ref = num_to_char(ref)
 
-      #count the segment where the errors occur
-      if edition != 'E':
-        #WER on each line
-        if options.V == 1:
-          v_editions+=1
-        if options.vocab != None:
-          if ref not in vocab:
-            oovs+=1
-
-      #count events in dictionaries
-      if edition == 'S' or edition == 'A':
-        subs_all+=1
-        if edition == 'A':
-          oovSubs+=1
-        if options.n > 0:
-          if ref not in subs:
-            subs[ref]={}
-          if rec not in subs[ref]:
-            subs[ref][rec] = 1
+        #color the operations
+        if options.v == True:
+          str_out = ""
+          if edition == 'S':
+            str_out = "%s" %(colors.c_string("B",rec+join_symbol+ref).encode("utf-8"))
+          elif edition == 'A':
+            str_out = "%s" %(colors.c_string("Y",rec+join_symbol+ref).encode("utf-8"))
+          elif edition == 'I':
+            str_out = "%s" %(colors.c_string("G",ref).encode("utf-8"))
+          elif edition == 'D':
+            str_out = "%s" %(colors.c_string("R",rec).encode("utf-8"))
+          elif edition == 'O':
+            str_out = "%s" %(colors.c_string("Y",ref).encode("utf-8"))
           else:
-            subs[ref][rec]+=1
-        subs_counts[ref]+=1
+            str_out = "%s" %ref.encode("utf-8")
+          if not options.cer:
+            str_out = str_out+" "
+          elif "__" in str_out:
+            str_out = " "+str_out+" "
+          stdout.write(str_out)
 
-      elif edition == 'I' or edition == 'O':
-        if edition == 'O':
-          oovIns+=1
-        ins_all+=1
-        ins[ref]+=1
-      elif edition == 'D':
-        dels_all+=1
-        dels[rec]+=1
 
-    if options.v == True:
-      stdout.write("\n")
+        #count the segment where the errors occur
+        if edition != 'E':
+          #WER on each line
+          if options.V == 1:
+            v_editions+=1
+          if options.vocab != None:
+            if ref not in vocab:
+              oovs+=1
 
-    if options.V == 1:
-      stdout.write("[II] WER-per-sentence Eds: %d Ref: %d\n" %(v_editions,len(w_j)))
+        #count events in dictionaries
+        if edition == 'S' or edition == 'A':
+          subs_all+=1
+          if edition == 'A':
+            oovSubs+=1
+          if options.n > 0:
+            if ref not in subs:
+              subs[ref]={}
+            if rec not in subs[ref]:
+              subs[ref][rec] = 1
+            else:
+              subs[ref][rec]+=1
+          subs_counts[ref]+=1
+
+        elif edition == 'I' or edition == 'O':
+          if edition == 'O':
+            oovIns+=1
+          ins_all+=1
+          ins[ref]+=1
+        elif edition == 'D':
+          dels_all+=1
+          dels[rec]+=1
+
+        #count number of pressed keys Eq == 1 else Ref
+        if edition == 'E':
+          n_pressed_keys += 1
+        elif edition == 'D':
+          n_pressed_keys += 1
+        else:
+          n_pressed_keys += len(ref)+1
+
+      if options.v == True:
+        stdout.write("\n")
+
+      if options.V == 1:
+        stdout.write("[II] WER-per-sentence Eds: %d Ref: %d\n" %(v_editions,len(w_j)))
 
     i = rec_file.readline()
 
@@ -298,6 +427,9 @@ def calculate_statistics(rec_file,ref_file,vocab,options):
     stdout.write(" OOVsSubs: %.2f%%" %(float(oovSubs)/subs_all*100))
     stdout.write(" OOVsIns: %.2f%%" %(float(oovIns)/ins_all*100))
   stdout.write("\n")
+
+  if options.key_pressed:
+    stdout.write("Number of pressed keys: %d\n" %n_pressed_keys)
 
   if options.n > 0:
     stdout.write("----------------------------------\nWer due to words words\n----------------------------------\n")
@@ -344,6 +476,10 @@ def main():
       help='Color the output')
   cmd_parser.add_option('-O', '--vocab',
      action="store", type="string", dest="vocab", default=None, help='Vocabulary to count OOVs')
+  cmd_parser.add_option('-K','--number-keys',
+     action="store_true", dest="key_pressed", help='Calcultate the number of keys need to correct erroneous words')
+  cmd_parser.add_option('-i', '--ignore-blank',
+     action="store_true", dest="ignore_blank", help='Ignore blank lines in reference')
 
   cmd_parser.parse_args(argv)
   (opts, args)= cmd_parser.parse_args()

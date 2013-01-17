@@ -99,7 +99,7 @@ class color:
       self.RESET_SEQ = "\033[0m"
     else:
       self.d['K']="["
-      self.d['R']="["
+      self.d['R']="<"
       self.d['G']="["
       self.d['Y']="["
       self.d['B']="["
@@ -308,7 +308,7 @@ def calculate_statistics(rec_file,ref_file,vocab,options):
         changes = lev_changes(w_i, w_j, 1, 1, 1, vocab, eq_func)
         for ikk in changes:
           [edition, rec_p, ref_p] = ikk
-          rec = w_i[rec_p] if len(w_i) > 0 else "#"
+          rec = words.inv(w_i[rec_p]) if len(w_i) > 0 else "#"
           if options.cer:
             rec = num_to_char(rec)
           if options.v == True:

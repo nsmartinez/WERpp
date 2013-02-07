@@ -271,12 +271,6 @@ def calculate_statistics(rec_file,ref_file,vocab,options):
   while len(i) != 0:
     j = ref_file.readline()
 
-    #delete some symbols
-    if options.excp_file != None:
-      for e in excps:
-        i = i.replace(e,"")
-        j = j.replace(e,"")
-
     if options.cer:
       if options.equal_func == "lower":
         i = char_to_num(i[:-1].lower())
@@ -288,12 +282,24 @@ def calculate_statistics(rec_file,ref_file,vocab,options):
     words_i = i.split()
     words_j = j.split()
 
+
+
     w_i = []
-    w_j = []
     for i in words_i:
-      w_i.append(words.dic(i))
+      #delete some words if necessary
+      if options.excp_file != None:
+        if i not in excps:
+          w_i.append(words.dic(i))
+      else:
+        w_i.append(words.dic(i))
+
+    w_j = []
     for i in words_j:
-      w_j.append(words.dic(i))
+      if options.excp_file != None:
+        if i not in excps:
+          w_j.append(words.dic(i))
+      else:
+        w_j.append(words.dic(i))
 
     if len(w_j) == 0:
       if options.ignore_blank == True:
@@ -304,34 +310,31 @@ def calculate_statistics(rec_file,ref_file,vocab,options):
         stderr.write("[WW] Blank line in reference\n")
         if options.v == True:
           stdout.write("[II] ")
-
-        changes = lev_changes(w_i, w_j, 1, 1, 1, vocab, eq_func)
-        for ikk in changes:
-          [edition, rec_p, ref_p] = ikk
-          rec = words.inv(w_i[rec_p]) if len(w_i) > 0 else "#"
-          if options.cer:
-            rec = num_to_char(rec)
-          if options.v == True:
+          for index in w_i:
+            rec = num_to_char(index)
             str_out = "%s" %(colors.c_string("R",rec).encode("utf-8"))
             if not options.cer:
               str_out = str_out+" "
             elif "__" in str_out:
               str_out = " "+str_out+" "
             stdout.write(str_out)
-          dels_all+=1
-          dels[rec]+=1
-        if options.v == True:
+            dels_all+=1
+            dels[rec]+=1
           stdout.write("\n")
       i = rec_file.readline()
       continue
 
-
     ref_count+= len(w_j)
 
-    if options.v == None and options.V == 0 and options.n == 0 and options.color == None and \
+    if options.v == None and options.n == 0 and options.color == None and \
           options.vocab == None and options.key_pressed == None:
-      ins_naive, del_naive, subs_naive = lev_changes_naive(w_i,w_j)
+      ins_naive = del_naive = subs_naive = 0
+      if len(w_i) == 0:
+        ins_naive += len(w_j)
+      else:
+        ins_naive, del_naive, subs_naive = lev_changes_naive(w_i,w_j)
       ins_all += ins_naive; dels_all += del_naive; subs_all += subs_naive
+      v_editions = ins_naive + del_naive + subs_naive
     else:
       changes = lev_changes(w_i,w_j,1,1,1,vocab,eq_func)
 
@@ -413,8 +416,8 @@ def calculate_statistics(rec_file,ref_file,vocab,options):
       if options.v == True:
         stdout.write("\n")
 
-      if options.V == 1:
-        stdout.write("[II] WER-per-sentence Eds: %d Ref: %d\n" %(v_editions,len(w_j)))
+    if options.V == 1:
+      stdout.write("[II] WER-per-sentence Eds: %d Ref: %d\n" %(v_editions,len(w_j)))
 
     i = rec_file.readline()
 

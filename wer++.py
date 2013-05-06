@@ -234,11 +234,20 @@ def lev_changes(str1, str2, i_cost, d_cost, d_sub,vocab={}, eq_func=string_equal
   path.reverse()
   return path
 
-def calculate_statistics(rec_file,ref_file,vocab,options):
+def calculate_statistics(rec_file, ref_file, options):
   subs={}; subs_counts=D(); subs_all = 0
   ins=D(); ins_all = 0
   dels=D(); dels_all = 0
+
+  #There is an external vocab for OOV
   words=Dincr(); n_words = 0
+  vocab = {}
+  if options.vocab != None:
+    f = codecs.open(options.vocab,"r","utf-8")
+    for i in f.readlines():
+      for j in i.split():
+        if words.dic(j) not in vocab:
+          vocab[words.dic(j)]=1
 
   join_symbol="@"
   colors=color(options.color)
@@ -487,13 +496,6 @@ def main():
   cmd_parser.parse_args(argv)
   (opts, args)= cmd_parser.parse_args()
 
-  vocab = {}
-  if opts.vocab != None:
-    f = codecs.open(opts.vocab,"r","utf-8")
-    for i in f.readlines():
-      for j in i.split():
-        if j not in vocab:
-          vocab[j]=1
 
   if len(args) != 2:
     cmd_parser.print_help()
@@ -504,7 +506,7 @@ def main():
   rec_file_reader = FileReader(rec_file)
   ref_file_reader = FileReader(ref_file)
 
-  calculate_statistics(rec_file,ref_file,vocab,opts)
+  calculate_statistics(rec_file,ref_file,opts)
 
 if __name__ == "__main__":
   main()

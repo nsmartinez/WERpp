@@ -205,14 +205,15 @@ def lev_changes(str1, str2, i_cost, d_cost, d_sub,vocab={}, eq_func=string_equal
     sub[0][i]='I'
   for i in range(1, len(str1)+1):
     for j in range(1, len(str2)+1):
-      if d[i][j-1]+i_cost < d[i-1][j]+d_cost and d[i][j-1] < d[i-1][j-1]+(not eq_func(str1[i-1],str2[j-1]))*d_sub:
-        if vocab=={} or (str2[j-1] in vocab):
-          sub[i][j] = 'I';
-        else:
-          sub[i][j] = 'O'; #Oov insertion
-      elif d[i-1][j]+d_cost < d[i][j-1]+i_cost and d[i-1][j] < d[i-1][j-1]+(not eq_func(str1[i-1],str2[j-1]))*d_sub:
-        sub[i][j] = 'D';
-      else:
+      cur_i_cost = d[i][j-1] + i_cost
+      cur_d_cost = d[i-1][j] + d_cost
+      cur_sub_cost = d[i-1][j-1] + (not eq_func(str1[i-1],str2[j-1]))*d_sub
+
+      #Calculate min cost
+      d[i][j] = min(cur_sub_cost, cur_i_cost, cur_d_cost)
+
+      #Store the path to retrieve the operation
+      if cur_sub_cost < cur_i_cost and cur_sub_cost < cur_d_cost:
         if eq_func(str1[i-1],str2[j-1]):
           sub[i][j] = 'E';
         else:
@@ -220,7 +221,14 @@ def lev_changes(str1, str2, i_cost, d_cost, d_sub,vocab={}, eq_func=string_equal
             sub[i][j] = 'S';
           else:
             sub[i][j] = 'A'; #Oov Substitution
-      d[i][j] = min(d[i][j-1]+i_cost, d[i-1][j]+d_cost, d[i-1][j-1]+(not eq_func(str1[i-1],str2[j-1]))*d_sub)
+      elif cur_i_cost < cur_d_cost:
+        if vocab=={} or (str2[j-1] in vocab):
+          sub[i][j] = 'I';
+        else:
+          sub[i][j] = 'O'; #Oov insertion
+      else:
+        sub[i][j] = 'D';
+
 
   i=len(str1); j=len(str2); path=[]
   while(i > 0 or j > 0):
@@ -320,7 +328,10 @@ def calculate_statistics(rec_file, ref_file, options):
         if options.v == True:
           stdout.write("[II] ")
           for index in w_i:
-            rec = num_to_char(index)
+            if options.cer:
+              rec = num_to_char(index)
+            else:
+              rec = words.inv(index)
             str_out = "%s" %(colors.c_string("R",rec).encode("utf-8"))
             if not options.cer:
               str_out = str_out+" "
@@ -330,6 +341,8 @@ def calculate_statistics(rec_file, ref_file, options):
             dels_all+=1
             dels[rec]+=1
           stdout.write("\n")
+        else:
+          dels_all+=len(w_i)
       i = rec_file.readline()
       continue
 
@@ -430,8 +443,12 @@ def calculate_statistics(rec_file, ref_file, options):
 
     i = rec_file.readline()
 
-  stdout.write("WER: %.2f (Ins: %d Dels: %d Subs: %d Ref: %d )" \
-      %(float(subs_all+ins_all+dels_all)/ref_count*100,ins_all,dels_all,subs_all,ref_count))
+  if ref_count == 0:
+    stderr.write("[EE] There are not words in the reference. WER will not be calculated.\n")
+    exit(1)
+  else:
+    stdout.write("WER: %.2f (Ins: %d Dels: %d Subs: %d Ref: %d )" \
+        %(float(subs_all+ins_all+dels_all)/ref_count*100,ins_all,dels_all,subs_all,ref_count))
 
   if options.vocab != None:
    # stdout.write(" OOVs: %.2f%%" %(float(oovs)/ref_count*100))

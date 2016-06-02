@@ -447,8 +447,12 @@ def calculate_statistics(rec_file, ref_file, options):
     stderr.write("[EE] There are not words in the reference. WER will not be calculated.\n")
     exit(1)
   else:
-    stdout.write("WER: %.2f (Ins: %d Dels: %d Subs: %d Ref: %d )" \
-        %(float(subs_all+ins_all+dels_all)/ref_count*100,ins_all,dels_all,subs_all,ref_count))
+    if options.cer:
+      tag="CER"
+    else:
+      tag="WER"
+    stdout.write("%s: %.2f (Ins: %d Dels: %d Subs: %d Ref: %d )" \
+        %(tag, float(subs_all+ins_all+dels_all)/ref_count*100,ins_all,dels_all,subs_all,ref_count))
 
   if options.vocab != None:
    # stdout.write(" OOVs: %.2f%%" %(float(oovs)/ref_count*100))

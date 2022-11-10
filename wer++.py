@@ -147,12 +147,12 @@ def lev_changes_naive(str1, str2, eq_func=string_equal):
   d_prev=[]
   d_curr=[]
 
-  for i in xrange(len(str1)+1):
+  for i in range(len(str1)+1):
     d_prev.append(e_op(0,i,0))
     d_curr.append(e_op(0,0,0))
 
-  for i in xrange(1, len(str2)+1):
-    for j in xrange(1, len(str1)+1):
+  for i in range(1, len(str2)+1):
+    for j in range(1, len(str1)+1):
       if j == 1:
         d_curr[0].i = i
 
